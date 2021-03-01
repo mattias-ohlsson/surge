@@ -1,36 +1,27 @@
-%define debug_package %{nil}
-
 Name:           surge
-Version:        1.6.6
+Version:        1.8.1
 Release:        1%{?dist}
-Summary:        Surge Synthesizer
+Summary:        Subtractive hybrid synthesizer virtual instrument
 
 # /LICENSE: GPLv3
-# /vst3sdk @ 10287bc: GPLv3
-# /vstgui.surge @ 313faee: BSD
+# /vst3sdk: GPLv3
+# /vstgui.surge: BSD
 License:        GPLv3 and BSD
-URL:            https://surge-synthesizer.github.io
+URL:            https://surge-synth-team.org
 
-# Build source commands:
-# VERSION=$(grep ^Version *.spec | cut -d' ' -f9)
-# grep "^#    " *.spec | sed 's|#    ||' | sed "s|VERSION|$VERSION|g" | bash
+Source0:        https://github.com/surge-synthesizer/releases/releases/download/%{version}/SurgeSrc_%{version}.tgz
 
-# Build source script:
-#    #!/bin/bash
-#    git clone https://github.com/surge-synthesizer/surge.git --branch release/VERSION --single-branch surge-VERSION
-#    cd surge-VERSION
-#    git submodule update --init --recursive
-#    rm -rf .git
-#    cd ..
-#    tar cvjf surge-VERSION.tar.gz surge-VERSION
-
-Source0:        %{name}-%{version}.tar.gz
-
-BuildRequires:  /usr/bin/premake5 /usr/bin/g++ cmake which python3
-BuildRequires:  cairo-devel libxkbcommon-x11-devel xcb-util-cursor-devel xcb-util-keysyms-devel xcb-util-devel
+BuildRequires:  cmake >= 3.15
+BuildRequires:  /usr/bin/g++
+BuildRequires:  which
+BuildRequires:  python3
+BuildRequires:  xcb-util-keysyms-devel
+BuildRequires:  cairo-devel
+BuildRequires:  libxkbcommon-x11-devel
+BuildRequires:  xcb-util-cursor-devel
+BuildRequires:  xcb-util-devel
 BuildRequires:  libsndfile-devel
-BuildRequires:  rsync
-BuildRequires:  /usr/bin/pathfix.py
+BuildRequires:  /usr/bin/pathfix.py python-unversioned-command
 
 %global common_desc \
 Surge is an Open Source Digital Synthesizer.
@@ -57,42 +48,39 @@ Requires:	%{name} = %{version}-%{release}
 This package contains the VST3 plugin.
 
 %prep
-%autosetup
+%autosetup -n surge
 
 %build
-
-sed -i "s|/usr/lib/vst|%{buildroot}%{_libdir}/vst|" build-linux.sh
-sed -i "s|/usr/lib/vst3|%{buildroot}%{_libdir}/vst3|" build-linux.sh
-sed -i "s|/usr/lib/lv2|%{buildroot}/%{_libdir}/lv2|" build-linux.sh
-sed -i "s|/usr/bin|%{buildroot}%{_bindir}|" build-linux.sh
-sed -i "s|/usr/share/Surge|%{buildroot}%{_datadir}/Surge|" build-linux.sh
-
 pathfix.py -pni "%{__python3} %{py3_shbang_opts}" .
-pathfix.py -pni "%{__python3} %{py3_shbang_opts}" libs/lv2/waf
-pathfix.py -pni "%{__python3} %{py3_shbang_opts}" libs/lv2/waflib/waf
-pathfix.py -pni "%{__python3} %{py3_shbang_opts}" scripts/linux/generate-lv2-ttl.py
-sed -i 's|python|python3|g' premake5.lua CMakeLists.txt
 
-./build-linux.sh build
+# Disable code-quality-pipeline-checks
+sed -i '/add_custom_target(code-quality-pipeline-checks)/s/^/#/' CMakeLists.txt
+sed -i '/add_dependencies(code-quality-pipeline-checks download-extra-content)/s/^/#/' CMakeLists.txt
+
+%if 0%{?fedora}
+%cmake -DBUILD_SHARED_LIBS:BOOL=OFF
+%cmake_build
+%else
+%cmake -S . -B %{_vpath_builddir} -DBUILD_SHARED_LIBS:BOOL=OFF
+%__cmake --build %{_vpath_builddir} %{?_smp_mflags} --verbose
+%endif
 
 %install
-rm -rf $RPM_BUILD_ROOT
+install -Dp ./*/surge-headless %{buildroot}%{_bindir}/surge-headless
+install --directory %{buildroot}%{_datadir}/surge
+cp -r resources/data/. %{buildroot}%{_datadir}/surge/
 
-mkdir -p %{buildroot}%{_libdir}
-mkdir -p %{buildroot}%{_bindir}
-mkdir -p %{buildroot}%{_datadir}
+install --directory %{buildroot}%{_libdir}/vst3
+cp -r ./*/surge_products/Surge.vst3 %{buildroot}%{_libdir}/vst3/
 
-./build-linux.sh install
-
-mv %{buildroot}%{_bindir}/Surge-Headless/Surge/Surge-Headless %{buildroot}%{_bindir}/surge-headless
-rm -rf %{buildroot}%{_bindir}/Surge-Headless
+install --directory %{buildroot}%{_libdir}/lv2
+cp -r ./*/surge_products/Surge.lv2 %{buildroot}%{_libdir}/lv2/
 
 %files
 %license LICENSE
 %doc README.md AUTHORS
-
 %{_bindir}/surge-headless
-%{_datadir}/Surge
+%{_datadir}/surge
 
 %files -n lv2-%{name}-plugins
 %{_libdir}/lv2/Surge.lv2
@@ -101,5 +89,8 @@ rm -rf %{buildroot}%{_bindir}/Surge-Headless
 %{_libdir}/vst3/Surge.vst3
 
 %changelog
+* Mon Mar 01 2021 Mattias Ohlsson <mattias.ohlsson@inprose.com> - 1.8.1-1
+- Update to 1.8.1
+
 * Tue Apr 14 2020 Mattias Ohlsson <mattias.ohlsson@inprose.com> - 1.6.6-1
 - Initial build
